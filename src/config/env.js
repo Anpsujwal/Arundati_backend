@@ -11,6 +11,7 @@ const env = {
   MAX_PHOTO_SIZE_MB: parseInt(process.env.MAX_PHOTO_SIZE_MB, 10) || 5,
   MAX_DOC_SIZE_MB: parseInt(process.env.MAX_DOC_SIZE_MB, 10) || 10,
   CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:5173',
+  ASTRO_SERVICE_URL: process.env.ASTRO_SERVICE_URL || 'http://localhost:8000',
 };
 
 module.exports = env;

@@ -27,7 +27,7 @@ async function step2(req, res, next) {
 
 async function step3(req, res, next) {
   try {
-    const result = profileService.saveStep3(req.user.user_id, req.body);
+    const result = await profileService.saveStep3(req.user.user_id, req.body);
     return success(res, result, 'Birth information saved.');
   } catch (err) { next(err); }
 }

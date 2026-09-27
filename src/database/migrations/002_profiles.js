@@ -12,7 +12,7 @@ function up() {
       surname          TEXT    NOT NULL DEFAULT '',
       gender           TEXT    CHECK(gender IN ('Male','Female')),
       date_of_birth    DATE,
-      marital_status   TEXT    CHECK(marital_status IN ('Unmarried','Divorced','Widowed')),
+      marital_status   TEXT    CHECK(marital_status IN ('Never Married','Divorced','Widowed')),
       sub_sect         TEXT,
       gotra            TEXT    NOT NULL DEFAULT '',
       pravara          TEXT,

@@ -5,8 +5,10 @@ const router = express.Router();
 const controller = require('./matches.controller');
 const { authenticate, requireApproved } = require('../../middleware/auth.middleware');
 
-// Both routes require authenticated + approved status
-router.get('/feed',        authenticate, requireApproved, controller.getFeed);
-router.get('/profile/:id', authenticate, requireApproved, controller.getProfile);
+const guard = [authenticate, requireApproved];
+
+router.get('/feed',                   ...guard, controller.getFeed);
+router.get('/profile/:id',            ...guard, controller.getProfile);
+router.get('/profile/:id/compatibility', ...guard, controller.getCompatibility);
 
 module.exports = router;

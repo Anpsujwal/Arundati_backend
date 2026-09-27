@@ -18,17 +18,15 @@ async function bootstrap() {
     require('./src/database/migrations/006_documents'),
     require('./src/database/migrations/007_interests'),
     require('./src/database/migrations/008_schema_v2'),
+    require('./src/database/migrations/009_kundali'),
+    require('./src/database/migrations/010_kundali_matches'),
   ];
   for (const m of migrations) m.up();
   console.log('[bootstrap] Migrations complete.');
 
   console.log('[bootstrap] Running seeds...');
   const { seedAdmin } = require('./src/database/seeds/admin.seed');
-  const { seedTestUsers } = require('./src/database/seeds/test_users.seed');
   await seedAdmin();
-  if (env.NODE_ENV === 'development') {
-    await seedTestUsers();
-  }
   console.log('[bootstrap] Seeds complete.');
 
   app.listen(env.PORT, () => {

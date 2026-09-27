@@ -2,6 +2,28 @@
 
 const { getDb } = require('../../config/database');
 const { safeUser, publicProfile, adminProfile } = require('../../utils/sanitize.utils');
+const env = require('../../config/env');
+
+/**
+ * Geocode a place name via the Python astrology service.
+ * Returns { latitude, longitude } or null if not resolved.
+ * Best-effort — never throws.
+ */
+async function geocodeBirthPlace(placeName) {
+  if (!placeName) return null;
+  try {
+    const url = `${env.ASTRO_SERVICE_URL || 'http://localhost:8000'}/geocode?place=${encodeURIComponent(placeName)}`;
+    const res = await fetch(url, { signal: AbortSignal.timeout(12_000) });
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (data.found && data.latitude != null && data.longitude != null) {
+      return { latitude: data.latitude, longitude: data.longitude };
+    }
+  } catch (e) {
+    console.warn('[profile] Geocoding failed for place:', placeName, e.message);
+  }
+  return null;
+}
 
 // Helper: get or assert profile exists for user
 function getProfileByUserId(userId) {
@@ -18,7 +40,20 @@ function getProfileByUserId(userId) {
 // ─── Step 1: Basic Information ───────────────────────────────────────────────
 function saveStep1(userId, data) {
   const db = getDb();
-  const { first_name, surname, gender, date_of_birth, marital_status } = data;
+  const { first_name, surname, gender, date_of_birth } = data;
+
+  // Normalise marital_status aliases → canonical DB values
+  // DB CHECK: ('Never Married','Divorced','Widowed')
+  const MARITAL_MAP = { 'Unmarried': 'Never Married', 'Single': 'Never Married' };
+  const marital_status = MARITAL_MAP[data.marital_status] ?? data.marital_status;
+
+  // Normalise profile_managed_by aliases → canonical DB values
+  // DB CHECK: ('Self','Parent','Sibling','Joint')
+  const MANAGED_BY_MAP = { 'Relative': 'Joint' };
+  const managed_by = data.profile_managed_by
+    ? (MANAGED_BY_MAP[data.profile_managed_by] ?? data.profile_managed_by)
+    : null;
+
   db.prepare(`
     UPDATE profiles SET
       first_name = ?, surname = ?, gender = ?, date_of_birth = ?,
@@ -28,9 +63,9 @@ function saveStep1(userId, data) {
   `).run(first_name, surname, gender, date_of_birth, marital_status, userId);
 
   // Update profile_managed_by on users table
-  if (data.profile_managed_by) {
+  if (managed_by) {
     db.prepare('UPDATE users SET profile_managed_by = ?, updated_at = CURRENT_TIMESTAMP WHERE user_id = ?')
-      .run(data.profile_managed_by, userId);
+      .run(managed_by, userId);
   }
   return getProfileByUserId(userId);
 }
@@ -53,9 +88,19 @@ function saveStep2(userId, data) {
 }
 
 // ─── Step 3: Birth Information ───────────────────────────────────────────────
-function saveStep3(userId, data) {
+async function saveStep3(userId, data) {
   const db = getDb();
-  const { birth_time, birth_place, latitude, longitude, timezone } = data;
+  let { birth_time, birth_place, latitude, longitude, timezone } = data;
+
+  // Auto-geocode if place is provided but coordinates are missing
+  if (birth_place && (latitude == null || longitude == null || latitude === '' || longitude === '')) {
+    const coords = await geocodeBirthPlace(birth_place);
+    if (coords) {
+      latitude = coords.latitude;
+      longitude = coords.longitude;
+      console.log(`[profile] Auto-geocoded '${birth_place}' → (${latitude}, ${longitude})`);
+    }
+  }
 
   const profile = getProfileByUserId(userId);
 
@@ -65,12 +110,12 @@ function saveStep3(userId, data) {
     db.prepare(`
       UPDATE astro_data SET birth_time=?, birth_place=?, latitude=?, longitude=?, timezone=?
       WHERE profile_id=?
-    `).run(birth_time, birth_place, latitude, longitude, timezone, profile.profile_id);
+    `).run(birth_time, birth_place, latitude ?? null, longitude ?? null, timezone, profile.profile_id);
   } else {
     db.prepare(`
       INSERT INTO astro_data (profile_id, birth_time, birth_place, latitude, longitude, timezone)
       VALUES (?,?,?,?,?,?)
-    `).run(profile.profile_id, birth_time, birth_place, latitude, longitude, timezone);
+    `).run(profile.profile_id, birth_time, birth_place, latitude ?? null, longitude ?? null, timezone);
   }
 
   db.prepare(`

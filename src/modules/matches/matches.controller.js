@@ -3,11 +3,11 @@
 const matchesService = require('./matches.service');
 const { success } = require('../../utils/response.utils');
 
-function getFeed(req, res, next) {
+async function getFeed(req, res, next) {
   try {
-    const page = parseInt(req.query.page, 10) || 1;
+    const page  = parseInt(req.query.page,  10) || 1;
     const limit = Math.min(parseInt(req.query.limit, 10) || 12, 50);
-    const result = matchesService.getMatchFeed(req.user.user_id, { page, limit });
+    const result = await matchesService.getMatchFeed(req.user.user_id, { page, limit });
     return success(res, result);
   } catch (err) { next(err); }
 }
@@ -20,4 +20,12 @@ function getProfile(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { getFeed, getProfile };
+async function getCompatibility(req, res, next) {
+  try {
+    const candidateProfileId = parseInt(req.params.id, 10);
+    const result = await matchesService.getCompatibilityDetail(req.user.user_id, candidateProfileId);
+    return success(res, result);
+  } catch (err) { next(err); }
+}
+
+module.exports = { getFeed, getProfile, getCompatibility };

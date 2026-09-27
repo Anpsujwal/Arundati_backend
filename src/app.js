@@ -14,6 +14,7 @@ const matchesRoutes   = require('./modules/matches/matches.routes');
 const adminRoutes     = require('./modules/admin/admin.routes');
 const interestsRoutes = require('./modules/interests/interests.routes');
 const filesRoutes     = require('./modules/files/files.routes');
+const kundaliRoutes   = require('./modules/kundali/kundali.routes');
 
 const app = express();
 
@@ -61,6 +62,7 @@ app.use('/api/v1/matches',   matchesRoutes);
 app.use('/api/v1/admin',     adminRoutes);
 app.use('/api/v1/interests', interestsRoutes);
 app.use('/api/v1/files',     filesRoutes);
+app.use('/api/v1/kundali',   kundaliRoutes);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 app.use((req, res) => {

@@ -35,4 +35,11 @@ function verify(req, res, next) {
   } catch (e) { next(e); }
 }
 
-module.exports = { getStats, getRecent, getPending, getAllUsers, getProfile, verify };
+function deleteUser(req, res, next) {
+  try {
+    const result = adminService.deleteUser(parseInt(req.params.id, 10));
+    return success(res, result, 'User permanently deleted.');
+  } catch (e) { next(e); }
+}
+
+module.exports = { getStats, getRecent, getPending, getAllUsers, getProfile, verify, deleteUser };
