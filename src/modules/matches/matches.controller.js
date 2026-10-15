@@ -1,7 +1,8 @@
 'use strict';
 
 const matchesService = require('./matches.service');
-const { success } = require('../../utils/response.utils');
+const gradesService  = require('./grades.service');
+const { success, created } = require('../../utils/response.utils');
 
 async function getFeed(req, res, next) {
   try {
@@ -28,4 +29,22 @@ async function getCompatibility(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { getFeed, getProfile, getCompatibility };
+// POST /matches/grade  { profile_id, grade }
+function setGrade(req, res, next) {
+  try {
+    const profileId = parseInt(req.body.profile_id, 10);
+    const { grade } = req.body;
+    const result = gradesService.gradeProfile(req.user.user_id, profileId, grade);
+    return created(res, result, 'Grade saved.');
+  } catch (err) { next(err); }
+}
+
+// GET /matches/grades — returns all grades for the current user
+function getGrades(req, res, next) {
+  try {
+    const result = gradesService.getUserGrades(req.user.user_id);
+    return success(res, result);
+  } catch (err) { next(err); }
+}
+
+module.exports = { getFeed, getProfile, getCompatibility, setGrade, getGrades };

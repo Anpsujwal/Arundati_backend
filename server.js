@@ -20,6 +20,7 @@ async function bootstrap() {
     require('./src/database/migrations/008_schema_v2'),
     require('./src/database/migrations/009_kundali'),
     require('./src/database/migrations/010_kundali_matches'),
+    require('./src/database/migrations/011_profile_grades'),
   ];
   for (const m of migrations) m.up();
   console.log('[bootstrap] Migrations complete.');

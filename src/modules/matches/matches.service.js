@@ -23,6 +23,7 @@ const { publicProfile } = require('../../utils/sanitize.utils');
 const { runMatchPipeline, normalizeGotra } = require('./matchPipeline.service');
 const { generateExplanation } = require('../kundali/kundali.explanation.service');
 const { getKundaliForUser } = require('../kundali/kundali.service');
+const { getAlreadyDealtIds, getUserGrades } = require('./grades.service');
 
 // ─── Match Feed ───────────────────────────────────────────────────────────────
 
@@ -45,6 +46,11 @@ async function getMatchFeed(userId, { page = 1, limit = 12 } = {}) {
   }
 
   const currentGotra = normalizeGotra(currentProfile.gotra);
+
+  // Load grades so we can: (a) skip AlreadyDealt profiles, (b) embed grade in each result
+  const alreadyDealtIds = getAlreadyDealtIds(userId);
+  const userGradesMap = {};
+  for (const g of getUserGrades(userId)) userGradesMap[g.profile_id] = g.grade;
 
   // Candidate pool: approved, opposite gender, different non-empty gotra
   // SQL enforces Stages 1 & 2 for performance (avoid loading all users into JS)
@@ -69,6 +75,9 @@ async function getMatchFeed(userId, { page = 1, limit = 12 } = {}) {
   // Run the pipeline for each candidate (reads from cache when valid)
   const results = [];
   for (const candidate of candidates) {
+    // Skip profiles the user has permanently marked as 'AlreadyDealt'
+    if (alreadyDealtIds.has(candidate.profile_id)) continue;
+
     const candidateAccount = { account_status: candidate.account_status };
     const candidateProfile = { ...candidate, user_id: candidate.u_user_id };
 
@@ -103,6 +112,8 @@ async function getMatchFeed(userId, { page = 1, limit = 12 } = {}) {
           doshas:  matchResult.gunaMilan.doshas,
         } : null,
         overall_score: matchResult.overall?.score ?? null,
+        // Grade set by this user (null if not yet graded)
+        user_grade: userGradesMap[candidate.profile_id] ?? null,
       });
     } catch (pipelineErr) {
       console.error(`[matches] Pipeline error for candidate ${candidate.u_user_id}:`, pipelineErr.message);
