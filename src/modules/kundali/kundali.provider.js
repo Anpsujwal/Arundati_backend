@@ -63,7 +63,7 @@ function validateBirthDetails(birthDetails) {
 async function generateKundali(birthDetails) {
   validateBirthDetails(birthDetails);
 
-  const serviceUrl = env.ASTRO_SERVICE_URL || 'http://localhost:8000';
+  const serviceUrl = (env.ASTRO_SERVICE_URL || 'https://arundati-kundali-backend-n8q1.onrender.com').replace(/\/+$/, '');
   const endpoint = `${serviceUrl}/kundali/generate`;
 
   let res;

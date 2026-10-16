@@ -11,7 +11,7 @@ const Database = require("./node_modules/better-sqlite3");
 const path = require("path");
 
 const DB_PATH = path.resolve(__dirname, "data/arundhati.db");
-const ASTRO_URL = process.env.ASTRO_SERVICE_URL || "http://localhost:8000";
+const ASTRO_URL = (process.env.ASTRO_SERVICE_URL || "https://arundati-kundali-backend-n8q1.onrender.com").replace(/\/+$/, "");
 
 const db = new Database(DB_PATH);
 db.pragma("journal_mode = WAL");

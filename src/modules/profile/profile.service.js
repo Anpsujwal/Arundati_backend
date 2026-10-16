@@ -12,7 +12,8 @@ const env = require('../../config/env');
 async function geocodeBirthPlace(placeName) {
   if (!placeName) return null;
   try {
-    const url = `${env.ASTRO_SERVICE_URL || 'http://localhost:8000'}/geocode?place=${encodeURIComponent(placeName)}`;
+    const baseUrl = (env.ASTRO_SERVICE_URL || 'https://arundati-kundali-backend-n8q1.onrender.com').replace(/\/+$/, '');
+    const url = `${baseUrl}/geocode?place=${encodeURIComponent(placeName)}`;
     const res = await fetch(url, { signal: AbortSignal.timeout(12_000) });
     if (!res.ok) return null;
     const data = await res.json();

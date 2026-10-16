@@ -11,7 +11,7 @@ const env = {
   MAX_PHOTO_SIZE_MB: parseInt(process.env.MAX_PHOTO_SIZE_MB, 10) || 5,
   MAX_DOC_SIZE_MB: parseInt(process.env.MAX_DOC_SIZE_MB, 10) || 10,
   CORS_ORIGIN: process.env.CORS_ORIGIN || 'http://localhost:5173',
-  ASTRO_SERVICE_URL: process.env.ASTRO_SERVICE_URL || 'http://localhost:8000',
+  ASTRO_SERVICE_URL: (process.env.ASTRO_SERVICE_URL || 'https://arundati-kundali-backend-n8q1.onrender.com').replace(/\/+$/, ''),
 };
 
 module.exports = env;
