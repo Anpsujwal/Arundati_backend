@@ -2,15 +2,16 @@
 
 const multer = require('multer');
 const path = require('path');
-const { v4: uuidv4 } = require('uuid');
+// const { v4: uuidv4 } = require('uuid');
+const { randomUUID } = require('crypto');
 const env = require('../config/env');
 
 const UPLOAD_BASE = path.resolve(__dirname, '../../uploads');
 
 // Allowed MIME types per upload type
 const PHOTO_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const DOC_TYPES   = ['image/jpeg', 'image/png', 'application/pdf'];
-const PDF_TYPES   = ['application/pdf'];
+const DOC_TYPES = ['image/jpeg', 'image/png', 'application/pdf'];
+const PDF_TYPES = ['application/pdf'];
 
 function makeStorage(subfolder) {
   return multer.diskStorage({
@@ -19,7 +20,7 @@ function makeStorage(subfolder) {
     },
     filename: (req, file, cb) => {
       const ext = path.extname(file.originalname).toLowerCase();
-      cb(null, `${uuidv4()}${ext}`);
+      cb(null, `${randomUUID()}${ext}`);
     },
   });
 }
