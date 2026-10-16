@@ -19,12 +19,33 @@ const kundaliRoutes   = require('./modules/kundali/kundali.routes');
 const app = express();
 
 // ─── CORS ───────────────────────────────────────────────────────────────────
-app.use(cors({
-  origin: env.CORS_ORIGIN,
-  credentials: true, // Allow cookies
+const rawOrigins = (env.CORS_ORIGIN || 'http://localhost:5173')
+  .split(',')
+  .map((s) => s.trim().replace(/\/+$/, ''));
+
+const corsOptions = {
+  origin: (origin, callback) => {
+    // Allow non-browser requests (curl, server-to-server, mobile)
+    if (!origin) return callback(null, true);
+
+    const cleanOrigin = origin.replace(/\/+$/, '');
+    if (
+      rawOrigins.includes('*') ||
+      rawOrigins.includes(cleanOrigin) ||
+      cleanOrigin.endsWith('.vercel.app') ||
+      /^http:\/\/localhost(:\d+)?$/.test(cleanOrigin) ||
+      /^http:\/\/127\.0\.0\.1(:\d+)?$/.test(cleanOrigin)
+    ) {
+      return callback(null, true);
+    }
+    return callback(new Error(`Origin ${origin} not allowed by CORS`));
+  },
+  credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
+};
+
+app.use(cors(corsOptions));
 
 // ─── Body Parsing ────────────────────────────────────────────────────────────
 app.use(express.json({ limit: '2mb' }));
