@@ -4,17 +4,17 @@ const kundaliService = require('./kundali.service');
 const { success } = require('../../utils/response.utils');
 
 /** GET /api/v1/kundali/me — current user's own Kundali (public fields) */
-function getMyKundali(req, res, next) {
+async function getMyKundali(req, res, next) {
   try {
-    const data = kundaliService.getKundaliForUser(req.user.user_id);
+    const data = await kundaliService.getKundaliForUser(req.user.user_id);
     return success(res, data);
   } catch (err) { next(err); }
 }
 
 /** GET /api/v1/kundali/me/chart — normalized chart JSON for the frontend chart renderer */
-function getMyChartData(req, res, next) {
+async function getMyChartData(req, res, next) {
   try {
-    const data = kundaliService.getChartData(req.user.user_id);
+    const data = await kundaliService.getChartData(req.user.user_id);
     return success(res, data);
   } catch (err) { next(err); }
 }
@@ -23,16 +23,16 @@ function getMyChartData(req, res, next) {
 async function retryKundali(req, res, next) {
   try {
     const userId = parseInt(req.params.userId, 10);
-    const result = kundaliService.retryKundaliGeneration(userId);
+    const result = await kundaliService.retryKundaliGeneration(userId);
     return success(res, result);
   } catch (err) { next(err); }
 }
 
 /** GET /api/v1/admin/users/:userId/kundali — admin view kundali status */
-function getKundaliAdmin(req, res, next) {
+async function getKundaliAdmin(req, res, next) {
   try {
     const userId = parseInt(req.params.userId, 10);
-    const data = kundaliService.getKundaliAdmin(userId);
+    const data = await kundaliService.getKundaliAdmin(userId);
     return success(res, data);
   } catch (err) { next(err); }
 }

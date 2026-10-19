@@ -13,10 +13,10 @@ async function getFeed(req, res, next) {
   } catch (err) { next(err); }
 }
 
-function getProfile(req, res, next) {
+async function getProfile(req, res, next) {
   try {
     const candidateId = parseInt(req.params.id, 10);
-    const result = matchesService.getCandidateProfile(req.user.user_id, candidateId);
+    const result = await matchesService.getCandidateProfile(req.user.user_id, candidateId);
     return success(res, result);
   } catch (err) { next(err); }
 }
@@ -29,20 +29,18 @@ async function getCompatibility(req, res, next) {
   } catch (err) { next(err); }
 }
 
-// POST /matches/grade  { profile_id, grade }
-function setGrade(req, res, next) {
+async function setGrade(req, res, next) {
   try {
     const profileId = parseInt(req.body.profile_id, 10);
     const { grade } = req.body;
-    const result = gradesService.gradeProfile(req.user.user_id, profileId, grade);
+    const result = await gradesService.gradeProfile(req.user.user_id, profileId, grade);
     return created(res, result, 'Grade saved.');
   } catch (err) { next(err); }
 }
 
-// GET /matches/grades — returns all grades for the current user
-function getGrades(req, res, next) {
+async function getGrades(req, res, next) {
   try {
-    const result = gradesService.getUserGrades(req.user.user_id);
+    const result = await gradesService.getUserGrades(req.user.user_id);
     return success(res, result);
   } catch (err) { next(err); }
 }

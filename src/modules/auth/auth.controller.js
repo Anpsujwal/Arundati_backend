@@ -1,13 +1,15 @@
 'use strict';
 
 const authService = require('./auth.service');
-const { success, created, error } = require('../../utils/response.utils');
+const { success, created } = require('../../utils/response.utils');
 const env = require('../../config/env');
+
+const isProd = env.NODE_ENV === 'production';
 
 const COOKIE_OPTIONS = {
   httpOnly: true,
-  secure: env.NODE_ENV === 'production',
-  sameSite: 'strict',
+  secure: isProd,
+  sameSite: process.env.COOKIE_SAME_SITE || (isProd ? 'none' : 'lax'),
   maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
 };
 
@@ -34,13 +36,13 @@ async function login(req, res, next) {
 }
 
 function logout(req, res) {
-  res.clearCookie('token');
+  res.clearCookie('token', COOKIE_OPTIONS);
   return success(res, null, 'Logged out successfully.');
 }
 
-function me(req, res, next) {
+async function me(req, res, next) {
   try {
-    const result = authService.getMe(req.user.user_id);
+    const result = await authService.getMe(req.user.user_id);
     return success(res, result);
   } catch (err) {
     next(err);

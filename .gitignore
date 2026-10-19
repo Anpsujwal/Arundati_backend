@@ -6,7 +6,7 @@ node_modules/
 .env.local
 .env.*.local
 # Keep the example template
-!.env.example
+.env.example
 
 # ── Database ─────────────────────────────────────────────────────────────────
 data/

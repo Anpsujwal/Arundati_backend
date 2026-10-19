@@ -1,12 +1,12 @@
 'use strict';
 
-const { getDb } = require('../../config/database');
+const db = require('../../config/database');
 
-function up() {
-  const db = getDb();
-  db.exec(`
+async function up(client) {
+  const runner = client || db;
+  await runner.query(`
     CREATE TABLE IF NOT EXISTS family_info (
-      family_id               INTEGER PRIMARY KEY AUTOINCREMENT,
+      family_id               SERIAL PRIMARY KEY,
       profile_id              INTEGER NOT NULL UNIQUE REFERENCES profiles(profile_id) ON DELETE CASCADE,
       father_name             TEXT,
       father_occupation       TEXT,
@@ -22,4 +22,4 @@ function up() {
   `);
 }
 
-module.exports = { up };
+module.exports = { name: '004_family', up };

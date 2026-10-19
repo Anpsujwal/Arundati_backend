@@ -4,7 +4,7 @@ const express = require('express');
 const router = express.Router();
 const path = require('path');
 const fs = require('fs');
-const { getDb } = require('../../config/database');
+const db = require('../../config/database');
 const { authenticate } = require('../../middleware/auth.middleware');
 const { requireAdmin } = require('../../middleware/admin.middleware');
 const { notFound, forbidden } = require('../../utils/response.utils');
@@ -48,10 +48,9 @@ router.get('/document/:doc_id', (req, res, next) => {
     req.cookies.token = req.query.token;
   }
   next();
-}, authenticate, requireAdmin, (req, res, next) => {
+}, authenticate, requireAdmin, async (req, res, next) => {
   try {
-    const db = getDb();
-    const doc = db.prepare('SELECT * FROM documents WHERE doc_id=?').get(parseInt(req.params.doc_id, 10));
+    const doc = await db.queryOne('SELECT * FROM documents WHERE doc_id = $1', [parseInt(req.params.doc_id, 10)]);
     if (!doc) return notFound(res, 'Document not found.');
 
     const subfolder = doc.doc_type === 'kundli_pdf' ? 'kundli' : 'documents';

@@ -1,20 +1,32 @@
 'use strict';
 
 const app = require('../src/app');
-const { migrations } = require('../src/database/migrations');
+const { runMigrations } = require('../src/database/migrations');
 const { seedAdmin } = require('../src/database/seeds/admin.seed');
 
-let isInitialized = false;
+let initPromise = null;
 
 async function ensureDbInit() {
-  if (isInitialized) return;
-  try {
-    for (const m of migrations) m.up();
-    await seedAdmin();
-    isInitialized = true;
-  } catch (err) {
-    console.error('[vercel serverless] Database initialization error:', err);
+  if (!process.env.DATABASE_URL) {
+    console.error(
+      '[vercel serverless] DATABASE_URL is not set. Please configure DATABASE_URL in Vercel environment variables.'
+    );
+    return;
   }
+
+  if (!initPromise) {
+    initPromise = (async () => {
+      try {
+        await runMigrations();
+        await seedAdmin();
+        console.log('[vercel serverless] Database initialized successfully.');
+      } catch (err) {
+        console.error('[vercel serverless] Database initialization error:', err.message);
+      }
+    })();
+  }
+
+  await initPromise;
 }
 
 module.exports = async (req, res) => {

@@ -1,20 +1,20 @@
 'use strict';
 
-const { getDb } = require('../../config/database');
+const db = require('../../config/database');
 
-function up() {
-  const db = getDb();
-  db.exec(`
+async function up(client) {
+  const runner = client || db;
+  await runner.query(`
     CREATE TABLE IF NOT EXISTS astro_data (
-      astro_id     INTEGER PRIMARY KEY AUTOINCREMENT,
+      astro_id     SERIAL PRIMARY KEY,
       profile_id   INTEGER NOT NULL UNIQUE REFERENCES profiles(profile_id) ON DELETE CASCADE,
       birth_time   TEXT,
       birth_place  TEXT,
-      latitude     REAL,
-      longitude    REAL,
+      latitude     DOUBLE PRECISION,
+      longitude    DOUBLE PRECISION,
       timezone     TEXT
     );
   `);
 }
 
-module.exports = { up };
+module.exports = { name: '003_astro', up };

@@ -1,12 +1,12 @@
 'use strict';
 
-const { getDb } = require('../../config/database');
+const db = require('../../config/database');
 
-function up() {
-  const db = getDb();
-  db.exec(`
+async function up(client) {
+  const runner = client || db;
+  await runner.query(`
     CREATE TABLE IF NOT EXISTS users (
-      user_id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id          SERIAL PRIMARY KEY,
       email            TEXT    UNIQUE NOT NULL,
       password_hash    TEXT    NOT NULL,
       role             TEXT    NOT NULL DEFAULT 'user'
@@ -14,10 +14,10 @@ function up() {
       account_status   TEXT    NOT NULL DEFAULT 'Pending_ID'
                                CHECK(account_status IN ('Pending_ID','Approved','Rejected','Suspended')),
       profile_managed_by TEXT  CHECK(profile_managed_by IN ('Self','Parent','Sibling','Joint')),
-      created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
 }
 
-module.exports = { up };
+module.exports = { name: '001_users', up };

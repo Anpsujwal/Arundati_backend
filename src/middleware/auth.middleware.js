@@ -1,8 +1,8 @@
 'use strict';
 
 const { verifyToken } = require('../utils/jwt.utils');
-const { unauthorized } = require('../utils/response.utils');
-const { getDb } = require('../config/database');
+const { unauthorized, forbidden } = require('../utils/response.utils');
+const db = require('../config/database');
 
 /**
  * Auth middleware.
@@ -10,7 +10,7 @@ const { getDb } = require('../config/database');
  *   1. httpOnly cookie: `token`
  *   2. Authorization: Bearer <token> header (for future Flutter/API clients)
  */
-function authenticate(req, res, next) {
+async function authenticate(req, res, next) {
   let token;
 
   // 1. Check cookie first
@@ -34,10 +34,10 @@ function authenticate(req, res, next) {
     const decoded = verifyToken(token);
 
     // Verify user still exists and is not suspended
-    const db = getDb();
-    const user = db.prepare(
-      'SELECT user_id, email, role, account_status FROM users WHERE user_id = ?'
-    ).get(decoded.userId);
+    const user = await db.queryOne(
+      'SELECT user_id, email, role, account_status FROM users WHERE user_id = $1',
+      [decoded.userId]
+    );
 
     if (!user) {
       return unauthorized(res, 'User no longer exists.');
@@ -60,7 +60,6 @@ function authenticate(req, res, next) {
  */
 function requireApproved(req, res, next) {
   if (req.user.account_status !== 'Approved') {
-    const { forbidden } = require('../utils/response.utils');
     return forbidden(res, 'Your profile must be verified and approved to access this feature.');
   }
   next();

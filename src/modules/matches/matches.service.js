@@ -1,24 +1,13 @@
 'use strict';
 
 /**
- * Matches Service
+ * Matches Service (PostgreSQL)
  *
  * Provides the match feed and candidate detail views.
  * All eligibility filtering is enforced SERVER-SIDE.
- *
- * Match Feed pipeline:
- *   1. Approved + opposite gender + different gotra (SQL)
- *   2. Full match pipeline (eligibility → kundali → guna milan → preferences → score)
- *   3. Filter to is_eligible = true (Guna >= 18)
- *   4. Sort by overall_score DESC
- *   5. Paginate
- *
- * Architecture:
- *   This service calls matchPipeline.service.js for computation.
- *   It does NOT directly call PyJHora or the compatibility engine.
  */
 
-const { getDb } = require('../../config/database');
+const db = require('../../config/database');
 const { publicProfile } = require('../../utils/sanitize.utils');
 const { runMatchPipeline, normalizeGotra } = require('./matchPipeline.service');
 const { generateExplanation } = require('../kundali/kundali.explanation.service');
@@ -27,18 +16,9 @@ const { getAlreadyDealtIds, getUserGrades } = require('./grades.service');
 
 // ─── Match Feed ───────────────────────────────────────────────────────────────
 
-/**
- * Get the paginated, ranked match feed for the current user.
- * Only returns candidates with Guna Milan >= 18/36 (eligibility threshold).
- *
- * @param {number} userId
- * @param {object} options — { page, limit }
- */
 async function getMatchFeed(userId, { page = 1, limit = 12 } = {}) {
-  const db = getDb();
-
-  const currentUser    = db.prepare('SELECT * FROM users WHERE user_id = ?').get(userId);
-  const currentProfile = db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(userId);
+  const currentUser    = await db.queryOne('SELECT * FROM users WHERE user_id = $1', [userId]);
+  const currentProfile = await db.queryOne('SELECT * FROM profiles WHERE user_id = $1', [userId]);
   if (!currentProfile) {
     const err = new Error('Your profile is not set up yet.');
     err.statusCode = 400;
@@ -47,14 +27,14 @@ async function getMatchFeed(userId, { page = 1, limit = 12 } = {}) {
 
   const currentGotra = normalizeGotra(currentProfile.gotra);
 
-  // Load grades so we can: (a) skip AlreadyDealt profiles, (b) embed grade in each result
-  const alreadyDealtIds = getAlreadyDealtIds(userId);
+  // Load grades
+  const alreadyDealtIds = await getAlreadyDealtIds(userId);
+  const grades = await getUserGrades(userId);
   const userGradesMap = {};
-  for (const g of getUserGrades(userId)) userGradesMap[g.profile_id] = g.grade;
+  for (const g of grades) userGradesMap[g.profile_id] = g.grade;
 
   // Candidate pool: approved, opposite gender, different non-empty gotra
-  // SQL enforces Stages 1 & 2 for performance (avoid loading all users into JS)
-  const candidates = db.prepare(`
+  const candidates = await db.queryRows(`
     SELECT
       p.*,
       u.account_status,
@@ -64,18 +44,17 @@ async function getMatchFeed(userId, { page = 1, limit = 12 } = {}) {
     JOIN users u ON u.user_id = p.user_id
     WHERE
       u.account_status = 'Approved'
-      AND p.gender != ?
-      AND LOWER(TRIM(p.gotra)) != ?
+      AND p.gender != $1
+      AND LOWER(TRIM(p.gotra)) != $2
       AND p.gotra != ''
-      AND p.user_id != ?
+      AND p.user_id != $3
     ORDER BY p.created_at DESC
     LIMIT 200
-  `).all(currentProfile.gender, currentGotra, userId);
+  `, [currentProfile.gender, currentGotra, userId]);
 
   // Run the pipeline for each candidate (reads from cache when valid)
   const results = [];
   for (const candidate of candidates) {
-    // Skip profiles the user has permanently marked as 'AlreadyDealt'
     if (alreadyDealtIds.has(candidate.profile_id)) continue;
 
     const candidateAccount = { account_status: candidate.account_status };
@@ -88,7 +67,7 @@ async function getMatchFeed(userId, { page = 1, limit = 12 } = {}) {
       );
 
       if (matchResult.excluded) continue;
-      if (!matchResult.eligibility?.isEligible) continue; // Guna < 18 threshold
+      if (!matchResult.eligibility?.isEligible) continue;
 
       results.push({
         profile_id:    candidate.profile_id,
@@ -112,12 +91,10 @@ async function getMatchFeed(userId, { page = 1, limit = 12 } = {}) {
           doshas:  matchResult.gunaMilan.doshas,
         } : null,
         overall_score: matchResult.overall?.score ?? null,
-        // Grade set by this user (null if not yet graded)
         user_grade: userGradesMap[candidate.profile_id] ?? null,
       });
     } catch (pipelineErr) {
       console.error(`[matches] Pipeline error for candidate ${candidate.u_user_id}:`, pipelineErr.message);
-      // Skip this candidate rather than crashing the entire feed
     }
   }
 
@@ -137,23 +114,17 @@ async function getMatchFeed(userId, { page = 1, limit = 12 } = {}) {
 
 // ─── Candidate Profile (detail view) ─────────────────────────────────────────
 
-/**
- * Get a single candidate profile (public/privacy-sanitized view).
- * Enforces all eligibility rules even on direct URL access.
- */
-function getCandidateProfile(userId, candidateProfileId) {
-  const db = getDb();
-
-  const currentProfile = db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(userId);
+async function getCandidateProfile(userId, candidateProfileId) {
+  const currentProfile = await db.queryOne('SELECT * FROM profiles WHERE user_id = $1', [userId]);
   if (!currentProfile) {
     const err = new Error('Your profile is not found.'); err.statusCode = 404; throw err;
   }
 
-  const candidate = db.prepare(`
+  const candidate = await db.queryOne(`
     SELECT p.*, u.account_status, u.user_id as u_user_id
     FROM profiles p JOIN users u ON u.user_id = p.user_id
-    WHERE p.profile_id = ?
-  `).get(candidateProfileId);
+    WHERE p.profile_id = $1
+  `, [candidateProfileId]);
 
   if (!candidate) {
     const err = new Error('Profile not found.'); err.statusCode = 404; throw err;
@@ -171,16 +142,16 @@ function getCandidateProfile(userId, candidateProfileId) {
     const err = new Error('Profile not available due to Gotra compatibility rules.'); err.statusCode = 403; throw err;
   }
 
-  const family = db.prepare('SELECT * FROM family_info WHERE profile_id=?').get(candidateProfileId);
-  const photos = db.prepare('SELECT * FROM profile_photos WHERE profile_id=? AND is_approved=1').all(candidateProfileId);
-  const astro  = db.prepare('SELECT * FROM astro_data WHERE profile_id=?').get(candidateProfileId);
+  const family = await db.queryOne('SELECT * FROM family_info WHERE profile_id = $1', [candidateProfileId]);
+  const photos = await db.queryRows('SELECT * FROM profile_photos WHERE profile_id = $1 AND is_approved = 1', [candidateProfileId]);
+  const astro  = await db.queryOne('SELECT * FROM astro_data WHERE profile_id = $1', [candidateProfileId]);
 
-  const interest = db.prepare(`
-    SELECT * FROM interests WHERE sender_profile_id = ? AND receiver_profile_id = ?
-  `).get(currentProfile.profile_id, candidateProfileId);
+  const interest = await db.queryOne(`
+    SELECT * FROM interests WHERE sender_profile_id = $1 AND receiver_profile_id = $2
+  `, [currentProfile.profile_id, candidateProfileId]);
 
   const sanitized = publicProfile(candidate, family);
-  const kundaliInfo = getKundaliForUser(candidate.u_user_id);
+  const kundaliInfo = await getKundaliForUser(candidate.u_user_id);
 
   return {
     ...sanitized,
@@ -193,30 +164,23 @@ function getCandidateProfile(userId, candidateProfileId) {
 
 // ─── Compatibility Detail ─────────────────────────────────────────────────────
 
-/**
- * Get full compatibility breakdown between the current user and a candidate.
- * Includes Kundali compatibility, Guna Milan, preferences, and AI explanation.
- */
 async function getCompatibilityDetail(userId, candidateProfileId) {
-  const db = getDb();
-
-  const currentUser    = db.prepare('SELECT * FROM users WHERE user_id = ?').get(userId);
-  const currentProfile = db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(userId);
+  const currentUser    = await db.queryOne('SELECT * FROM users WHERE user_id = $1', [userId]);
+  const currentProfile = await db.queryOne('SELECT * FROM profiles WHERE user_id = $1', [userId]);
   if (!currentProfile) {
     const err = new Error('Your profile not found.'); err.statusCode = 404; throw err;
   }
 
-  const candidate = db.prepare(`
+  const candidate = await db.queryOne(`
     SELECT p.*, u.account_status, u.user_id as u_user_id
     FROM profiles p JOIN users u ON u.user_id = p.user_id
-    WHERE p.profile_id = ?
-  `).get(candidateProfileId);
+    WHERE p.profile_id = $1
+  `, [candidateProfileId]);
 
   if (!candidate) {
     const err = new Error('Candidate not found.'); err.statusCode = 404; throw err;
   }
 
-  // Enforce eligibility rules
   if (candidate.account_status !== 'Approved') {
     const err = new Error('Profile not available.'); err.statusCode = 404; throw err;
   }
@@ -234,7 +198,6 @@ async function getCompatibilityDetail(userId, candidateProfileId) {
     candidateProfile, candidateAccount,
   );
 
-  // Generate AI explanation from structured result
   const aiExplanation = await generateExplanation(matchResult);
 
   return {

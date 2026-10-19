@@ -1,12 +1,12 @@
 'use strict';
 
-const { getDb } = require('../../config/database');
+const db = require('../../config/database');
 
-function up() {
-  const db = getDb();
-  db.exec(`
+async function up(client) {
+  const runner = client || db;
+  await runner.query(`
     CREATE TABLE IF NOT EXISTS profiles (
-      profile_id       INTEGER PRIMARY KEY AUTOINCREMENT,
+      profile_id       SERIAL PRIMARY KEY,
       user_id          INTEGER NOT NULL UNIQUE REFERENCES users(user_id) ON DELETE CASCADE,
       first_name       TEXT    NOT NULL DEFAULT '',
       surname          TEXT    NOT NULL DEFAULT '',
@@ -32,10 +32,10 @@ function up() {
       height_cm        INTEGER,
       about_me         TEXT,
       registration_step INTEGER NOT NULL DEFAULT 0,
-      created_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-      updated_at       DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      created_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at       TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT CURRENT_TIMESTAMP
     );
   `);
 }
 
-module.exports = { up };
+module.exports = { name: '002_profiles', up };

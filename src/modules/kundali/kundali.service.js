@@ -1,37 +1,31 @@
 'use strict';
 
 /**
- * Kundali Service
+ * Kundali Service (PostgreSQL)
  *
  * Business logic for Kundali generation, retrieval, and status management.
  * Uses kundali.provider.js for the actual calculation.
- * The rest of the application should call THIS service, not the provider directly.
  */
 
-const { getDb } = require('../../config/database');
+const db = require('../../config/database');
 const { generateKundali } = require('./kundali.provider');
 
-const ALGORITHM_VERSION = '1.2'; // 1.2: age-diff is now a hard exclusion filter (Stage 1.5)
+const ALGORITHM_VERSION = '1.2';
 
 // ─── Status constants ─────────────────────────────────────────────────────────
 
 const KUNDALI_STATUS = {
-  NOT_GENERATED:       'NOT_GENERATED',
-  GENERATING:          'GENERATING',
-  GENERATED:           'GENERATED',
-  FAILED:              'FAILED',
+  NOT_GENERATED:         'NOT_GENERATED',
+  GENERATING:            'GENERATING',
+  GENERATED:             'GENERATED',
+  FAILED:                'FAILED',
   INCOMPLETE_BIRTH_DATA: 'INCOMPLETE_BIRTH_DATA',
 };
 
 // ─── Internal helpers ─────────────────────────────────────────────────────────
 
-/**
- * Fetch birth details for a user from astro_data + profiles.
- * Returns null if not found.
- */
-function getBirthDetails(userId) {
-  const db = getDb();
-  return db.prepare(`
+async function getBirthDetails(userId) {
+  return db.queryOne(`
     SELECT
       p.date_of_birth,
       a.birth_time,
@@ -41,66 +35,60 @@ function getBirthDetails(userId) {
       a.timezone
     FROM profiles p
     LEFT JOIN astro_data a ON a.profile_id = p.profile_id
-    WHERE p.user_id = ?
-  `).get(userId);
+    WHERE p.user_id = $1
+  `, [userId]);
 }
 
-/**
- * Upsert the kundalis row for a user (insert or replace).
- */
-function upsertKundaliStatus(userId, status, extra = {}) {
-  const db = getDb();
-  const existing = db.prepare('SELECT kundali_id FROM kundalis WHERE user_id = ?').get(userId);
+async function upsertKundaliStatus(userId, status, extra = {}) {
+  const existing = await db.queryOne('SELECT kundali_id FROM kundalis WHERE user_id = $1', [userId]);
 
   if (existing) {
-    const sets = ['kundali_status = ?', 'updated_at = CURRENT_TIMESTAMP'];
+    const sets = ['kundali_status = $1', 'updated_at = CURRENT_TIMESTAMP'];
     const vals = [status];
-    if ('lagna' in extra)           { sets.push('lagna = ?');             vals.push(extra.lagna ?? null); }
-    if ('rashi' in extra)           { sets.push('rashi = ?');             vals.push(extra.rashi ?? null); }
-    if ('nakshatra' in extra)       { sets.push('nakshatra = ?');         vals.push(extra.nakshatra ?? null); }
-    if ('nakshatra_pada' in extra)  { sets.push('nakshatra_pada = ?');    vals.push(extra.nakshatra_pada ?? null); }
-    if ('birth_data' in extra)      { sets.push('birth_data = ?');        vals.push(extra.birth_data ?? null); }
-    if ('planetary_data' in extra)  { sets.push('planetary_data = ?');    vals.push(extra.planetary_data ?? null); }
-    if ('house_data' in extra)      { sets.push('house_data = ?');        vals.push(extra.house_data ?? null); }
-    if ('provider' in extra)        { sets.push('provider = ?');          vals.push(extra.provider ?? null); }
-    if ('provider_version' in extra){ sets.push('provider_version = ?');  vals.push(extra.provider_version ?? null); }
-    if ('calculation_config' in extra){ sets.push('calculation_config = ?'); vals.push(extra.calculation_config ?? null); }
-    if ('failure_reason' in extra)  { sets.push('failure_reason = ?');    vals.push(extra.failure_reason ?? null); }
-    if ('generated_at' in extra)    { sets.push('generated_at = ?');      vals.push(extra.generated_at ?? null); }
+    let idx = 2;
+
+    for (const col of [
+      'lagna', 'rashi', 'nakshatra', 'nakshatra_pada', 'birth_data',
+      'planetary_data', 'house_data', 'provider', 'provider_version',
+      'calculation_config', 'failure_reason', 'generated_at',
+    ]) {
+      if (col in extra) {
+        sets.push(`${col} = $${idx++}`);
+        vals.push(extra[col] ?? null);
+      }
+    }
 
     vals.push(userId);
-    db.prepare(`UPDATE kundalis SET ${sets.join(', ')} WHERE user_id = ?`).run(...vals);
+    await db.query(`UPDATE kundalis SET ${sets.join(', ')} WHERE user_id = $${idx}`, vals);
   } else {
-    db.prepare(`
-      INSERT INTO kundalis (user_id, kundali_status,
+    await db.query(`
+      INSERT INTO kundalis (
+        user_id, kundali_status,
         lagna, rashi, nakshatra, nakshatra_pada,
         birth_data, planetary_data, house_data,
         provider, provider_version, calculation_config,
-        failure_reason, generated_at)
-      VALUES (?, ?,  ?, ?, ?, ?,  ?, ?, ?,  ?, ?, ?,  ?, ?)
-    `).run(
+        failure_reason, generated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    `, [
       userId, status,
       extra.lagna ?? null, extra.rashi ?? null, extra.nakshatra ?? null, extra.nakshatra_pada ?? null,
       extra.birth_data ?? null, extra.planetary_data ?? null, extra.house_data ?? null,
       extra.provider ?? null, extra.provider_version ?? null, extra.calculation_config ?? null,
       extra.failure_reason ?? null, extra.generated_at ?? null,
-    );
+    ]);
   }
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-/**
- * Get Kundali for a user (the public-facing fields only — no failure_reason).
- */
-function getKundaliForUser(userId) {
-  const db = getDb();
-  const row = db.prepare(`
+async function getKundaliForUser(userId) {
+  const row = await db.queryOne(`
     SELECT kundali_status, lagna, rashi, nakshatra, nakshatra_pada,
            planetary_data, house_data, provider, provider_version,
            calculation_config, generated_at
-    FROM kundalis WHERE user_id = ?
-  `).get(userId);
+    FROM kundalis WHERE user_id = $1
+  `, [userId]);
+
   if (!row) return { kundali_status: KUNDALI_STATUS.NOT_GENERATED };
 
   return {
@@ -117,26 +105,12 @@ function getKundaliForUser(userId) {
   };
 }
 
-/**
- * Get normalized chart data for the frontend South Indian chart renderer.
- *
- * Returns a structure the SouthIndianChart component can consume directly:
- * {
- *   chart_type: 'rasi',
- *   kundali_status,
- *   ascendant: { rashi, degree },
- *   planets: [{ name, rashi, degree, nakshatra, nakshatra_pada, house }],
- *   houses:  [{ house, sign, lord }],
- *   meta: { lagna, rashi, nakshatra, nakshatra_pada, generated_at }
- * }
- */
-function getChartData(userId) {
-  const db = getDb();
-  const row = db.prepare(`
+async function getChartData(userId) {
+  const row = await db.queryOne(`
     SELECT kundali_status, lagna, rashi, nakshatra, nakshatra_pada,
            planetary_data, house_data, generated_at
-    FROM kundalis WHERE user_id = ?
-  `).get(userId);
+    FROM kundalis WHERE user_id = $1
+  `, [userId]);
 
   if (!row) return { kundali_status: KUNDALI_STATUS.NOT_GENERATED };
   if (row.kundali_status !== KUNDALI_STATUS.GENERATED) {
@@ -146,7 +120,6 @@ function getChartData(userId) {
   const planets = row.planetary_data ? JSON.parse(row.planetary_data) : [];
   const houses  = row.house_data     ? JSON.parse(row.house_data)     : [];
 
-  // Normalise planet fields: the stored model uses `sign` for rashi name
   const normalisedPlanets = planets.map((p) => ({
     name:           p.planet,
     rashi:          p.sign,
@@ -156,13 +129,9 @@ function getChartData(userId) {
     house:          p.house,
   }));
 
-  // Lagna degree: find degree of ascendant from first house sign
-  const lagnaSignIndex = ['Aries','Taurus','Gemini','Cancer','Leo','Virgo',
-    'Libra','Scorpio','Sagittarius','Capricorn','Aquarius','Pisces'].indexOf(row.lagna);
-  // We don't store lagna degree separately; report the sign only
   const ascendant = {
     rashi:  row.lagna,
-    degree: null, // degree within sign — not stored separately
+    degree: null,
   };
 
   return {
@@ -181,12 +150,8 @@ function getChartData(userId) {
   };
 }
 
-/**
- * Get full internal Kundali row (admin only — includes failure_reason).
- */
-function getKundaliAdmin(userId) {
-  const db = getDb();
-  const row = db.prepare('SELECT * FROM kundalis WHERE user_id = ?').get(userId);
+async function getKundaliAdmin(userId) {
+  const row = await db.queryOne('SELECT * FROM kundalis WHERE user_id = $1', [userId]);
   if (!row) return { kundali_status: KUNDALI_STATUS.NOT_GENERATED };
   return {
     ...row,
@@ -197,39 +162,25 @@ function getKundaliAdmin(userId) {
   };
 }
 
-/**
- * Check if a user has complete birth data. Used to gate admin approval.
- */
-function hasBirthData(userId) {
-  const details = getBirthDetails(userId);
+async function hasBirthData(userId) {
+  const details = await getBirthDetails(userId);
   if (!details) return false;
   const { date_of_birth, birth_time, birth_place, latitude, longitude, timezone } = details;
   return !!(date_of_birth && birth_time && birth_place && latitude != null && longitude != null && timezone);
 }
 
-/**
- * Trigger Kundali generation for a user.
- * Sets status to GENERATING immediately (synchronous DB write),
- * then runs the actual calculation asynchronously.
- *
- * Designed to be called AFTER admin approval.
- * The HTTP response to the admin is NOT blocked by this.
- */
-function triggerKundaliGeneration(userId) {
-  const details = getBirthDetails(userId);
+async function triggerKundaliGeneration(userId) {
+  const details = await getBirthDetails(userId);
 
-  // Pre-flight check — should already be validated by admin service
   if (!details || !details.date_of_birth || !details.birth_time || !details.birth_place
       || details.latitude == null || details.longitude == null || !details.timezone) {
-    upsertKundaliStatus(userId, KUNDALI_STATUS.INCOMPLETE_BIRTH_DATA);
+    await upsertKundaliStatus(userId, KUNDALI_STATUS.INCOMPLETE_BIRTH_DATA);
     console.warn(`[kundali] User ${userId}: incomplete birth data, cannot generate Kundali.`);
     return;
   }
 
-  // Set GENERATING synchronously so callers can observe status
-  upsertKundaliStatus(userId, KUNDALI_STATUS.GENERATING);
+  await upsertKundaliStatus(userId, KUNDALI_STATUS.GENERATING);
 
-  // Run async without blocking the caller
   setImmediate(() => {
     _runGeneration(userId, details).catch((err) => {
       console.error(`[kundali] User ${userId}: unexpected error in generation loop:`, err);
@@ -237,9 +188,6 @@ function triggerKundaliGeneration(userId) {
   });
 }
 
-/**
- * Internal: actually call the provider and persist the result.
- */
 async function _runGeneration(userId, details) {
   console.log(`[kundali] Starting generation for user ${userId}`);
   try {
@@ -254,7 +202,7 @@ async function _runGeneration(userId, details) {
 
     const kundali = await generateKundali(birthDetails);
 
-    upsertKundaliStatus(userId, KUNDALI_STATUS.GENERATED, {
+    await upsertKundaliStatus(userId, KUNDALI_STATUS.GENERATED, {
       lagna:              kundali.chart.lagna,
       rashi:              kundali.chart.rashi,
       nakshatra:          kundali.chart.nakshatra,
@@ -274,21 +222,16 @@ async function _runGeneration(userId, details) {
 
     console.log(`[kundali] User ${userId}: GENERATED (Lagna=${kundali.chart.lagna}, Rashi=${kundali.chart.rashi})`);
 
-    // Invalidate any stale match cache entries for this user
-    _invalidateMatchCache(userId);
+    await _invalidateMatchCache(userId);
   } catch (err) {
     const reason = `${err.code || 'UNKNOWN'}: ${err.internal || err.message}`;
-    upsertKundaliStatus(userId, KUNDALI_STATUS.FAILED, { failure_reason: reason });
+    await upsertKundaliStatus(userId, KUNDALI_STATUS.FAILED, { failure_reason: reason });
     console.error(`[kundali] User ${userId}: FAILED — ${reason}`);
   }
 }
 
-/**
- * Admin retry: re-trigger generation for a FAILED or INCOMPLETE Kundali.
- */
-function retryKundaliGeneration(userId) {
-  const db = getDb();
-  const user = db.prepare('SELECT user_id, account_status FROM users WHERE user_id = ?').get(userId);
+async function retryKundaliGeneration(userId) {
+  const user = await db.queryOne('SELECT user_id, account_status FROM users WHERE user_id = $1', [userId]);
   if (!user) {
     const err = new Error('User not found.'); err.statusCode = 404; throw err;
   }
@@ -296,17 +239,13 @@ function retryKundaliGeneration(userId) {
     const err = new Error('User must be Approved before a Kundali can be generated.');
     err.statusCode = 400; throw err;
   }
-  triggerKundaliGeneration(userId);
+  await triggerKundaliGeneration(userId);
   return { message: 'Kundali generation queued.', kundali_status: KUNDALI_STATUS.GENERATING };
 }
 
-/**
- * Delete stale match cache rows when a Kundali is regenerated.
- */
-function _invalidateMatchCache(userId) {
+async function _invalidateMatchCache(userId) {
   try {
-    const db = getDb();
-    db.prepare('DELETE FROM kundali_matches WHERE user_id = ? OR candidate_id = ?').run(userId, userId);
+    await db.query('DELETE FROM kundali_matches WHERE user_id = $1 OR candidate_id = $2', [userId, userId]);
     console.log(`[kundali] Match cache invalidated for user ${userId}`);
   } catch (e) {
     console.error(`[kundali] Failed to invalidate match cache for user ${userId}:`, e.message);

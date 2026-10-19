@@ -37,7 +37,7 @@ The Arundhati backend is a RESTful API server that powers the matrimony platform
 |---------------|---------------------------------|
 | Runtime       | Node.js (CommonJS)              |
 | Framework     | Express 5                       |
-| Database      | SQLite via `better-sqlite3`     |
+| Database      | PostgreSQL via `pg` (Neon Serverless) |
 | Auth          | JWT (`jsonwebtoken`) + `bcryptjs` |
 | Validation    | `express-validator`             |
 | File Uploads  | `multer`                        |
@@ -142,23 +142,28 @@ Copy `.env.example` to `.env` and fill in the values:
 
 ## Database
 
-- **Engine**: SQLite (file-based, zero-config)
-- **Driver**: `better-sqlite3` (synchronous, high-performance)
-- **Location**: `./data/arundhati.db` (auto-created on first run)
-- **Migrations**: Sequential files `001_users` to `008_schema_v2` run at startup
+- **Engine**: PostgreSQL (Neon Serverless)
+- **Driver**: `pg` (reusable connection pool with SSL)
+- **Config**: Configured via `DATABASE_URL` environment variable
+- **Migrations**: Sequential PostgreSQL migrations tracked via `_migrations` table
+- **Run Migrations**: `npm run migrate`
+- **Data Migration (SQLite → PostgreSQL)**: `npm run migrate:data`
 
 ### Migration Files
 
-| File              | Description                             |
-|-------------------|-----------------------------------------|
-| `001_users`       | Core users table (auth)                 |
-| `002_profiles`    | Personal profile details                |
-| `003_astro`       | Astrological information                |
-| `004_family`      | Family background                       |
-| `005_photos`      | Profile photo uploads                   |
-| `006_documents`   | ID / verification document uploads      |
-| `007_interests`   | Interest expressions between users      |
-| `008_schema_v2`   | Additional fields & schema improvements |
+| File                  | Description                               |
+|-----------------------|-------------------------------------------|
+| `001_users`           | Core users table (auth)                   |
+| `002_profiles`        | Personal profile details                  |
+| `003_astro`           | Astrological information                  |
+| `004_family`          | Family background                         |
+| `005_photos`          | Profile photo uploads                     |
+| `006_documents`       | ID / verification document uploads        |
+| `007_interests`       | Interest expressions between users        |
+| `008_schema_v2`       | Additional fields & elder references      |
+| `009_kundali`         | Generated Kundali charts & status         |
+| `010_kundali_matches` | Kundali compatibility & Guna Milan cache  |
+| `011_profile_grades`  | Profile bookmarking & prioritization tags |
 
 ---
 

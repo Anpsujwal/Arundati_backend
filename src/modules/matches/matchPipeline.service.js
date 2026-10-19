@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * Match Pipeline Service
+ * Match Pipeline Service (PostgreSQL)
  *
  * Orchestrates the complete matchmaking process for a single user pair:
  *
@@ -14,22 +14,9 @@
  *   Stage 6 — Profile preference matching
  *   Stage 7 — Composite score calculation
  *   Stage 8 — Persist to cache (kundali_matches)
- *
- * SECURITY: All eligibility checks are server-side.
- *            No client value is trusted for gotra, score, or eligibility.
- *
- * PERFORMANCE: Results are cached in kundali_matches.
- *               The pipeline only runs when cache is stale or missing.
- *
- * AGE PREFERENCE: When pref_age_diff_min / pref_age_diff_max are set by the
- *   user, candidates outside that absolute age gap are EXCLUDED (hard filter),
- *   not merely ranked lower.  This mirrors the Matrimony expectation that the
- *   stated age range is a strict requirement.
- *   Only one side enforces the age filter (the seeker's preferences);
- *   the candidate's own preferences are not applied here.
  */
 
-const { getDb } = require('../../config/database');
+const db = require('../../config/database');
 const { calculateCompatibility } = require('../kundali/kundali.compatibility.service');
 const { calculateGunaMilan, GUNA_THRESHOLD } = require('../kundali/gunaMilan.service');
 const { scorePreferences, PREFERENCE_WEIGHT_IN_OVERALL } = require('./preferenceScoring.service');
@@ -44,10 +31,6 @@ const SCORE_WEIGHTS = {
 
 // ─── Age gap helper ───────────────────────────────────────────────────────────
 
-/**
- * Returns the absolute age difference in whole years between two DOB strings,
- * or null if either DOB is missing.
- */
 function calcAbsAgeDiff(dob1, dob2) {
   if (!dob1 || !dob2) return null;
   const MS_PER_YEAR = 365.25 * 24 * 3600 * 1000;
@@ -56,11 +39,6 @@ function calcAbsAgeDiff(dob1, dob2) {
   return Math.abs(age1 - age2);
 }
 
-/**
- * Returns true when the candidate's age gap is within the user's stated
- * preference range.  Returns true (pass) when no preference is set or when
- * DOBs are unavailable (so we don't silently drop candidates with missing data).
- */
 function passesAgeDiffFilter(userProfile, candidateProfile) {
   const { pref_age_diff_min, pref_age_diff_max } = userProfile;
   const prefSet = pref_age_diff_min != null || pref_age_diff_max != null;
@@ -71,7 +49,7 @@ function passesAgeDiffFilter(userProfile, candidateProfile) {
 
   const min = pref_age_diff_min ?? 0;
   const max = pref_age_diff_max ?? Infinity;
-  const gap = Math.floor(absGap);          // whole years
+  const gap = Math.floor(absGap);
 
   if (gap >= min && gap <= max) {
     return { pass: true, reason: `Age gap ${gap}yr within [${min}, ${max}]` };
@@ -88,11 +66,11 @@ function normalizeGotra(gotra) {
 
 // ─── Kundali loader ───────────────────────────────────────────────────────────
 
-function loadKundali(userId) {
-  const db = getDb();
-  const row = db.prepare(
-    "SELECT * FROM kundalis WHERE user_id = ? AND kundali_status = 'GENERATED'"
-  ).get(userId);
+async function loadKundali(userId) {
+  const row = await db.queryOne(
+    "SELECT * FROM kundalis WHERE user_id = $1 AND kundali_status = 'GENERATED'",
+    [userId]
+  );
   if (!row) return null;
 
   return {
@@ -113,16 +91,14 @@ function loadKundali(userId) {
 
 // ─── Cache read/write ─────────────────────────────────────────────────────────
 
-function readCache(userId, candidateId) {
-  const db = getDb();
-  return db.prepare(
-    'SELECT * FROM kundali_matches WHERE user_id = ? AND candidate_id = ?'
-  ).get(userId, candidateId);
+async function readCache(userId, candidateId) {
+  return db.queryOne(
+    'SELECT * FROM kundali_matches WHERE user_id = $1 AND candidate_id = $2',
+    [userId, candidateId]
+  );
 }
 
-function writeCache(userId, candidateId, result) {
-  const db = getDb();
-  const existing = readCache(userId, candidateId);
+async function writeCache(userId, candidateId, result) {
   const guna = result.gunaMilan;
   const data = {
     kundali_compatibility: result.kundali?.compatibility ? JSON.stringify(result.kundali.compatibility) : null,
@@ -135,33 +111,36 @@ function writeCache(userId, candidateId, result) {
     provider_version: result.providerVersion || null,
   };
 
-  if (existing) {
-    db.prepare(`
-      UPDATE kundali_matches SET
-        kundali_compatibility = ?, guna_milan = ?, guna_total = ?,
-        profile_score = ?, overall_score = ?, is_eligible = ?,
-        algorithm_version = ?, provider_version = ?,
-        calculated_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-      WHERE user_id = ? AND candidate_id = ?
-    `).run(
-      data.kundali_compatibility, data.guna_milan, data.guna_total,
-      data.profile_score, data.overall_score, data.is_eligible,
-      data.algorithm_version, data.provider_version,
-      userId, candidateId,
-    );
-  } else {
-    db.prepare(`
-      INSERT INTO kundali_matches
-        (user_id, candidate_id, kundali_compatibility, guna_milan, guna_total,
-         profile_score, overall_score, is_eligible, algorithm_version, provider_version)
-      VALUES (?,?,?,?,?,?,?,?,?,?)
-    `).run(
-      userId, candidateId,
-      data.kundali_compatibility, data.guna_milan, data.guna_total,
-      data.profile_score, data.overall_score, data.is_eligible,
-      data.algorithm_version, data.provider_version,
-    );
-  }
+  await db.query(`
+    INSERT INTO kundali_matches (
+      user_id, candidate_id, kundali_compatibility, guna_milan, guna_total,
+      profile_score, overall_score, is_eligible, algorithm_version, provider_version,
+      calculated_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT (user_id, candidate_id)
+    DO UPDATE SET
+      kundali_compatibility = EXCLUDED.kundali_compatibility,
+      guna_milan = EXCLUDED.guna_milan,
+      guna_total = EXCLUDED.guna_total,
+      profile_score = EXCLUDED.profile_score,
+      overall_score = EXCLUDED.overall_score,
+      is_eligible = EXCLUDED.is_eligible,
+      algorithm_version = EXCLUDED.algorithm_version,
+      provider_version = EXCLUDED.provider_version,
+      calculated_at = CURRENT_TIMESTAMP,
+      updated_at = CURRENT_TIMESTAMP
+  `, [
+    userId,
+    candidateId,
+    data.kundali_compatibility,
+    data.guna_milan,
+    data.guna_total,
+    data.profile_score,
+    data.overall_score,
+    data.is_eligible,
+    data.algorithm_version,
+    data.provider_version,
+  ]);
 }
 
 // ─── Harmony level → numeric score ───────────────────────────────────────────
@@ -170,17 +149,6 @@ const HARMONY_SCORE = { high: 1.0, moderate: 0.65, neutral: 0.5, challenging: 0.
 
 // ─── Pipeline ─────────────────────────────────────────────────────────────────
 
-/**
- * Run the complete matchmaking pipeline for one user-candidate pair.
- * Reads from cache when available and valid.
- *
- * @param {object} userProfile     — profiles row for the current user
- * @param {object} userAccountRow  — users row for the current user
- * @param {object} candidateProfile — profiles row for the candidate
- * @param {object} candidateAccount — users row for the candidate
- * @param {boolean} forceRecalc    — skip cache (e.g. after Kundali retry)
- * @returns {object} MatchResult
- */
 async function runMatchPipeline(
   userProfile, userAccountRow,
   candidateProfile, candidateAccount,
@@ -204,7 +172,6 @@ async function runMatchPipeline(
   }
 
   // ── Stage 1.5: Age Difference Hard Filter ────────────────────────────────
-  // Only applied when the user has explicitly set an age preference.
   const ageFilter = passesAgeDiffFilter(userProfile, candidateProfile);
   if (!ageFilter.pass) {
     return {
@@ -232,7 +199,7 @@ async function runMatchPipeline(
 
   // ── Check cache ────────────────────────────────────────────────────────────
   if (!forceRecalc) {
-    const cached = readCache(userId, candidateId);
+    const cached = await readCache(userId, candidateId);
     if (cached && cached.algorithm_version === ALGORITHM_VERSION) {
       return {
         candidateId,
@@ -248,8 +215,8 @@ async function runMatchPipeline(
   }
 
   // ── Stage 3: Kundali Availability ─────────────────────────────────────────
-  const userKundali      = loadKundali(userId);
-  const candidateKundali = loadKundali(candidateId);
+  const userKundali      = await loadKundali(userId);
+  const candidateKundali = await loadKundali(candidateId);
   const kundaliAvailable = !!(userKundali && candidateKundali);
 
   if (!kundaliAvailable) {
@@ -265,7 +232,7 @@ async function runMatchPipeline(
       preferences: null,
       overall: { score: 0 },
     };
-    writeCache(userId, candidateId, result);
+    await writeCache(userId, candidateId, result);
     return result;
   }
 
@@ -282,17 +249,17 @@ async function runMatchPipeline(
   const preferences = scorePreferences(userProfile, candidateProfile);
 
   // ── Stage 7: Overall Score ────────────────────────────────────────────────
-  const gunaScore      = gunaMilan.total / 36;                              // normalised 0–1
-  const kundaliScore   = HARMONY_SCORE[compatibility.harmonyLevel] || 0.5; // 0–1
-  const prefScore      = preferences.composite;                             // 0–1
+  const gunaScore      = gunaMilan.total / 36;
+  const kundaliScore   = HARMONY_SCORE[compatibility.harmonyLevel] || 0.5;
+  const prefScore      = preferences.composite;
 
   const overallScore = (
     SCORE_WEIGHTS.gunaMilan  * gunaScore +
     SCORE_WEIGHTS.kundali    * kundaliScore +
     SCORE_WEIGHTS.preference * prefScore
-  ) * 100; // Express as 0–100
+  ) * 100;
 
-  const isEligible = gunaMilan.isEligible; // Must be >= GUNA_THRESHOLD (18/36)
+  const isEligible = gunaMilan.isEligible;
 
   const result = {
     candidateId,
@@ -307,7 +274,7 @@ async function runMatchPipeline(
   };
 
   // ── Stage 8: Cache ────────────────────────────────────────────────────────
-  writeCache(userId, candidateId, result);
+  await writeCache(userId, candidateId, result);
 
   return result;
 }

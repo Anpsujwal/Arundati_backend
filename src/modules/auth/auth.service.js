@@ -1,15 +1,13 @@
 'use strict';
 
-const { getDb } = require('../../config/database');
+const db = require('../../config/database');
 const { hashPassword, comparePassword } = require('../../utils/hash.utils');
 const { signToken } = require('../../utils/jwt.utils');
 const { safeUser } = require('../../utils/sanitize.utils');
 
 async function register({ email, password, profile_managed_by }) {
-  const db = getDb();
-
   // Check duplicate email
-  const existing = db.prepare('SELECT user_id FROM users WHERE email = ?').get(email);
+  const existing = await db.queryOne('SELECT user_id FROM users WHERE email = $1', [email]);
   if (existing) {
     const err = new Error('An account with this email already exists.');
     err.statusCode = 409;
@@ -18,28 +16,30 @@ async function register({ email, password, profile_managed_by }) {
 
   const password_hash = await hashPassword(password);
 
-  // Insert user — starts as Pending_ID
-  const { lastInsertRowid: userId } = db.prepare(`
-    INSERT INTO users (email, password_hash, role, account_status, profile_managed_by)
-    VALUES (?, ?, 'user', 'Pending_ID', ?)
-  `).run(email, password_hash, profile_managed_by);
+  // Insert user and create empty profile row inside a single atomic transaction
+  const user = await db.transaction(async (client) => {
+    const resUser = await client.query(`
+      INSERT INTO users (email, password_hash, role, account_status, profile_managed_by)
+      VALUES ($1, $2, 'user', 'Pending_ID', $3)
+      RETURNING *
+    `, [email, password_hash, profile_managed_by || null]);
 
-  // Create empty profile row so wizard steps can update it
-  db.prepare(`
-    INSERT INTO profiles (user_id, first_name, surname, gotra, registration_step)
-    VALUES (?, '', '', '', 0)
-  `).run(userId);
+    const newUser = resUser.rows[0];
 
-  const user = db.prepare('SELECT * FROM users WHERE user_id = ?').get(userId);
+    await client.query(`
+      INSERT INTO profiles (user_id, first_name, surname, gotra, registration_step)
+      VALUES ($1, '', '', '', 0)
+    `, [newUser.user_id]);
+
+    return newUser;
+  });
+
   const token = signToken({ userId: user.user_id, role: user.role });
-
   return { user: safeUser(user), token };
 }
 
 async function login({ email, password }) {
-  const db = getDb();
-
-  const user = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  const user = await db.queryOne('SELECT * FROM users WHERE email = $1', [email]);
   if (!user) {
     const err = new Error('Invalid email or password.');
     err.statusCode = 401;
@@ -63,15 +63,14 @@ async function login({ email, password }) {
   return { user: safeUser(user), token };
 }
 
-function getMe(userId) {
-  const db = getDb();
-  const user = db.prepare('SELECT * FROM users WHERE user_id = ?').get(userId);
+async function getMe(userId) {
+  const user = await db.queryOne('SELECT * FROM users WHERE user_id = $1', [userId]);
   if (!user) {
     const err = new Error('User not found.');
     err.statusCode = 404;
     throw err;
   }
-  const profile = db.prepare('SELECT * FROM profiles WHERE user_id = ?').get(userId);
+  const profile = await db.queryOne('SELECT * FROM profiles WHERE user_id = $1', [userId]);
   return { user: safeUser(user), profile: profile || null };
 }
 
