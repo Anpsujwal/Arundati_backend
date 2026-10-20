@@ -97,6 +97,21 @@ async function uploadDocument(req, res, next) {
   }
 }
 
+async function updateProfile(req, res, next) {
+  try {
+    const updated = await profileService.updateFullProfile(req.user.user_id, req.body);
+    return success(res, updated, 'Profile updated successfully.');
+  } catch (err) { next(err); }
+}
+
+async function deleteMyAccount(req, res, next) {
+  try {
+    const result = await profileService.deleteMyAccount(req.user.user_id);
+    res.clearCookie('token');
+    return success(res, result, 'Account permanently removed from database.');
+  } catch (err) { next(err); }
+}
+
 module.exports = {
   getMe,
   step1,
@@ -109,4 +124,6 @@ module.exports = {
   uploadPhoto,
   deletePhoto,
   uploadDocument,
+  updateProfile,
+  deleteMyAccount,
 };

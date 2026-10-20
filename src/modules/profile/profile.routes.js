@@ -7,6 +7,8 @@ const { authenticate } = require('../../middleware/auth.middleware');
 const { photoUpload, documentUpload, handleUploadError } = require('../../middleware/upload.middleware');
 
 router.get('/me', authenticate, controller.getMe);
+router.put('/me', authenticate, controller.updateProfile);
+router.delete('/account', authenticate, controller.deleteMyAccount);
 
 // Wizard steps
 router.post('/step/1', authenticate, controller.step1);
