@@ -215,15 +215,84 @@ async function saveStep5(userId, data) {
   return getProfileByUserId(userId);
 }
 
-// ─── Step 7: Preferences ────────────────────────────────────────────────────
+// ─── Step Validation Helper ──────────────────────────────────────────────────
+async function validateProfileSteps(userId) {
+  const profile = await db.queryOne('SELECT * FROM profiles WHERE user_id = $1', [userId]);
+  if (!profile) return { isComplete: false, steps: {}, missing: ['Profile not found'] };
+
+  const astro = await db.queryOne('SELECT * FROM astro_data WHERE profile_id = $1', [profile.profile_id]);
+  const family = await db.queryOne('SELECT * FROM family_info WHERE profile_id = $1', [profile.profile_id]);
+  const photos = await db.queryRows('SELECT * FROM profile_photos WHERE profile_id = $1', [profile.profile_id]);
+
+  const step1Missing = [];
+  if (!profile.first_name || !profile.first_name.trim()) step1Missing.push('First name');
+  if (!profile.surname || !profile.surname.trim()) step1Missing.push('Surname / Inti Peru');
+  if (!profile.gender) step1Missing.push('Gender');
+  if (!profile.date_of_birth) step1Missing.push('Date of birth');
+  if (!profile.marital_status) step1Missing.push('Marital status');
+
+  const step2Missing = [];
+  if (!profile.sub_sect || !profile.sub_sect.trim()) step2Missing.push('Sub-sect');
+  if (!profile.gotra || !profile.gotra.trim()) step2Missing.push('Gotra');
+
+  const step3Missing = [];
+  if (!astro || !astro.birth_time) step3Missing.push('Time of birth');
+  if (!astro || !astro.birth_place || !astro.birth_place.trim()) step3Missing.push('Birth place');
+  if (!astro || !astro.timezone) step3Missing.push('Timezone');
+
+  const step4Missing = [];
+  if (!profile.education || !profile.education.trim()) step4Missing.push('Highest education');
+  if (!profile.profession || !profile.profession.trim()) step4Missing.push('Profession');
+  if (!profile.city || !profile.city.trim()) step4Missing.push('Current city');
+  if (!profile.height_cm) step4Missing.push('Height');
+  if (!profile.annual_income) step4Missing.push('Annual income');
+  if (!profile.dietary_habit) step4Missing.push('Dietary preference');
+
+  const step5Missing = [];
+  if (!family || !family.father_name || !family.father_name.trim()) step5Missing.push("Father's name");
+  if (!family || !family.mother_name || !family.mother_name.trim()) step5Missing.push("Mother's name");
+
+  const step6Missing = [];
+  if (!photos || photos.length === 0) step6Missing.push('At least 1 profile photo');
+
+  const steps = {
+    step1: { stepNum: 1, complete: step1Missing.length === 0, missing: step1Missing, label: 'Basic Information' },
+    step2: { stepNum: 2, complete: step2Missing.length === 0, missing: step2Missing, label: 'Lineage & Gotra' },
+    step3: { stepNum: 3, complete: step3Missing.length === 0, missing: step3Missing, label: 'Birth Details' },
+    step4: { stepNum: 4, complete: step4Missing.length === 0, missing: step4Missing, label: 'Education & Profession' },
+    step5: { stepNum: 5, complete: step5Missing.length === 0, missing: step5Missing, label: 'Family Information' },
+    step6: { stepNum: 6, complete: step6Missing.length === 0, missing: step6Missing, label: 'Profile Photos' },
+    step7: { stepNum: 7, complete: true, missing: [], label: 'Partner Preferences' },
+  };
+
+  const isComplete = Object.values(steps).every((s) => s.complete);
+
+  return {
+    isComplete,
+    steps,
+  };
+}
+
+// ─── Step 7: Preferences & Final Submission ──────────────────────────────────
 async function saveStep7(userId, data) {
+  const validation = await validateProfileSteps(userId);
+  if (!validation.isComplete) {
+    const incompleteDetails = Object.values(validation.steps)
+      .filter((s) => !s.complete)
+      .map((s) => `${s.label}: missing ${s.missing.join(', ')}`)
+      .join('; ');
+    const error = new Error(`Cannot submit application. All 7 steps and mandatory fields must be completed. Incomplete: ${incompleteDetails}`);
+    error.status = 400;
+    throw error;
+  }
+
   const { pref_sub_sect, pref_location, pref_age_diff_min, pref_age_diff_max } = data;
 
   await db.query(`
     UPDATE profiles SET
       pref_sub_sect = $1, pref_location = $2,
       pref_age_diff_min = $3, pref_age_diff_max = $4,
-      registration_step = GREATEST(registration_step, 7),
+      registration_step = 7,
       updated_at = CURRENT_TIMESTAMP
     WHERE user_id = $5
   `, [
@@ -240,7 +309,7 @@ async function saveStep7(userId, data) {
 // ─── Step 6: Finalize ────────────────────────────────────────────────────────
 async function finalizeRegistration(userId) {
   await db.query(`
-    UPDATE profiles SET registration_step = 6, updated_at = CURRENT_TIMESTAMP WHERE user_id = $1
+    UPDATE profiles SET registration_step = GREATEST(registration_step, 6), updated_at = CURRENT_TIMESTAMP WHERE user_id = $1
   `, [userId]);
   return getProfileByUserId(userId);
 }
@@ -252,6 +321,7 @@ async function getMyProfile(userId) {
   const astro = profile ? await db.queryOne('SELECT * FROM astro_data WHERE profile_id = $1', [profile.profile_id]) : null;
   const family = profile ? await db.queryOne('SELECT * FROM family_info WHERE profile_id = $1', [profile.profile_id]) : null;
   const photos = profile ? await db.queryRows('SELECT * FROM profile_photos WHERE profile_id = $1', [profile.profile_id]) : [];
+  const validation = await validateProfileSteps(userId);
 
   return {
     user: safeUser(user),
@@ -259,6 +329,7 @@ async function getMyProfile(userId) {
     astro,
     family,
     photos,
+    validation,
   };
 }
 
@@ -666,6 +737,7 @@ module.exports = {
   saveStep4,
   saveStep5,
   saveStep7,
+  validateProfileSteps,
   finalizeRegistration,
   getMyProfile,
   savePhoto,
