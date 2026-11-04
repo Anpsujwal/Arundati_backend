@@ -1,6 +1,9 @@
 const dns = require('dns');
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 const env = require('./env');
+
+// Type 1082 is DATE in PostgreSQL. Return as plain 'YYYY-MM-DD' string instead of converting to JS Date
+types.setTypeParser(1082, (val) => val);
 
 // ─── DNS Fallback for ISP/local router resolution issues ───────────────────────
 // In environments where the local router/ISP DNS (e.g. 192.168.29.1) fails or refuses

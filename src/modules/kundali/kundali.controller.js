@@ -19,6 +19,14 @@ async function getMyChartData(req, res, next) {
   } catch (err) { next(err); }
 }
 
+/** POST /api/v1/kundali/me/retry — user retry own kundali */
+async function retryMyKundali(req, res, next) {
+  try {
+    const result = await kundaliService.retryKundaliGeneration(req.user.user_id);
+    return success(res, result);
+  } catch (err) { next(err); }
+}
+
 /** POST /api/v1/admin/users/:userId/kundali/retry — admin retry */
 async function retryKundali(req, res, next) {
   try {
@@ -37,4 +45,4 @@ async function getKundaliAdmin(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { getMyKundali, getMyChartData, retryKundali, getKundaliAdmin };
+module.exports = { getMyKundali, getMyChartData, retryMyKundali, retryKundali, getKundaliAdmin };

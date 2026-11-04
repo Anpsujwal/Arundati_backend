@@ -7,8 +7,9 @@ const { authenticate } = require('../../middleware/auth.middleware');
 const { requireAdmin } = require('../../middleware/admin.middleware');
 
 // User endpoint — authenticated users only
-router.get('/me',       authenticate, controller.getMyKundali);
-router.get('/me/chart', authenticate, controller.getMyChartData);
+router.get('/me',        authenticate, controller.getMyKundali);
+router.get('/me/chart',  authenticate, controller.getMyChartData);
+router.post('/me/retry', authenticate, controller.retryMyKundali);
 
 // Admin endpoints
 const adminGuard = [authenticate, requireAdmin];

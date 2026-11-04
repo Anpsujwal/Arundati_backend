@@ -27,7 +27,7 @@ const KUNDALI_STATUS = {
 async function getBirthDetails(userId) {
   return db.queryOne(`
     SELECT
-      p.date_of_birth,
+      to_char(p.date_of_birth, 'YYYY-MM-DD') AS date_of_birth,
       a.birth_time,
       a.birth_place,
       a.latitude,
@@ -85,7 +85,7 @@ async function getKundaliForUser(userId) {
   const row = await db.queryOne(`
     SELECT kundali_status, lagna, rashi, nakshatra, nakshatra_pada,
            planetary_data, house_data, provider, provider_version,
-           calculation_config, generated_at
+           calculation_config, failure_reason, generated_at
     FROM kundalis WHERE user_id = $1
   `, [userId]);
 
@@ -101,6 +101,7 @@ async function getKundaliForUser(userId) {
     house_data: row.house_data ? JSON.parse(row.house_data) : null,
     provider: row.provider,
     provider_version: row.provider_version,
+    failure_reason: row.failure_reason,
     generated_at: row.generated_at,
   };
 }
