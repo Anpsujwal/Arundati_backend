@@ -6,8 +6,10 @@
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
+    "backend:dev": "nodemon server.js",
     "migrate": "node src/database/migrate.js",
     "seed": "node -e \"require('./src/database/seeds/admin.seed').seedAdmin().then(()=>require('./src/config/database').closePool())\"",
+    "seed:community": "node src/database/seeds/community.seed.js",
     "migrate:data": "node scripts/migrate-sqlite-to-pg.js",
     "test": "node --test tests/**/*.test.js"
   },

@@ -31,7 +31,11 @@ test('Backend syntax and module loading test', async () => {
   assert.doesNotThrow(() => require('../src/modules/kundali/kundali.controller'));
   assert.doesNotThrow(() => require('../src/modules/admin/admin.service'));
   assert.doesNotThrow(() => require('../src/modules/admin/admin.controller'));
+  assert.doesNotThrow(() => require('../src/modules/community/community.service'));
+  assert.doesNotThrow(() => require('../src/modules/community/community.controller'));
+  assert.doesNotThrow(() => require('../src/modules/community/community.routes'));
   assert.doesNotThrow(() => require('../src/database/seeds/admin.seed'));
   assert.doesNotThrow(() => require('../src/database/seeds/gotras.seed'));
+  assert.doesNotThrow(() => require('../src/database/seeds/community.seed'));
   assert.doesNotThrow(() => require('../api/index'));
 });

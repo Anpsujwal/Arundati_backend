@@ -14,6 +14,7 @@ const migrations = [
   require('./009_kundali'),
   require('./010_kundali_matches'),
   require('./011_profile_grades'),
+  require('./012_community_categories'),
 ];
 
 /**

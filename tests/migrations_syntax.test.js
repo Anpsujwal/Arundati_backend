@@ -4,8 +4,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { migrations } = require('../src/database/migrations');
 
-test('All 11 migrations are present in correct order', () => {
-  assert.equal(migrations.length, 11);
+test('All 12 migrations are present in correct order', () => {
+  assert.equal(migrations.length, 12);
   const expectedNames = [
     '001_users',
     '002_profiles',
@@ -18,6 +18,7 @@ test('All 11 migrations are present in correct order', () => {
     '009_kundali',
     '010_kundali_matches',
     '011_profile_grades',
+    '012_community_categories',
   ];
 
   for (let i = 0; i < expectedNames.length; i++) {

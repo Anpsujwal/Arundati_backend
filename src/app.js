@@ -14,7 +14,8 @@ const matchesRoutes   = require('./modules/matches/matches.routes');
 const adminRoutes     = require('./modules/admin/admin.routes');
 const interestsRoutes = require('./modules/interests/interests.routes');
 const filesRoutes     = require('./modules/files/files.routes');
-const kundaliRoutes   = require('./modules/kundali/kundali.routes');
+const kundaliRoutes     = require('./modules/kundali/kundali.routes');
+const communityRoutes   = require('./modules/community/community.routes');
 
 const app = express();
 
@@ -62,11 +63,22 @@ app.get('/api/v1/ref/gotras', (req, res) => {
   res.json({ success: true, data: GOTRAS });
 });
 
-app.get('/api/v1/ref/subsects', (req, res) => {
-  res.json({
-    success: true,
-    data: ['Smartha', 'Shaivite', 'Vaishnava', 'Madhwa', 'Niyogi', 'Kanyakubj', 'Saraswat', 'Other'],
-  });
+// Legacy /ref/subsects kept for backward compatibility — returns flat list of Primary Sect names
+app.get('/api/v1/ref/subsects', async (req, res) => {
+  try {
+    const db = require('./config/database');
+    const rows = await db.queryRows(
+      `SELECT name FROM community_categories WHERE category_level = 1 AND is_active = TRUE ORDER BY display_order ASC, name ASC`
+    );
+    const names = rows.map((r) => r.name);
+    res.json({ success: true, data: names });
+  } catch (_) {
+    // Fallback to static list if DB not yet seeded
+    res.json({
+      success: true,
+      data: ['Smartha', 'Shaivite', 'Vaishnava', 'Madhwa', 'Niyogi', 'Kanyakubj', 'Saraswat', 'Other'],
+    });
+  }
 });
 
 app.get('/api/v1/ref/incomes', (req, res) => {
@@ -83,7 +95,8 @@ app.use('/api/v1/matches',   matchesRoutes);
 app.use('/api/v1/admin',     adminRoutes);
 app.use('/api/v1/interests', interestsRoutes);
 app.use('/api/v1/files',     filesRoutes);
-app.use('/api/v1/kundali',   kundaliRoutes);
+app.use('/api/v1/kundali',    kundaliRoutes);
+app.use('/api/v1/community',  communityRoutes);
 
 // ─── 404 handler ─────────────────────────────────────────────────────────────
 app.use((req, res) => {

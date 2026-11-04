@@ -74,20 +74,26 @@ async function saveStep1(userId, data) {
 
 // ─── Step 2: Lineage ──────────────────────────────────────────────────────────
 async function saveStep2(userId, data) {
-  const { sub_sect, gotra, pravara, maternal_gotra, maternal_inti_peru, veda, shakha, native_place } = data;
+  const {
+    primary_sect, sub_sect, gotra, pravara, maternal_gotra, maternal_inti_peru,
+    veda, shakha, native_place,
+  } = data;
   const pravaraNorm = pravara && pravara.trim() ? pravara.trim() : null;
 
   await db.query(`
     UPDATE profiles SET
-      sub_sect = $1, gotra = $2, pravara = $3, maternal_gotra = $4, maternal_inti_peru = $5,
-      veda = $6, shakha = $7, native_place = $8,
+      primary_sect = $1, sub_sect = $2, gotra = $3, pravara = $4,
+      maternal_gotra = $5, maternal_inti_peru = $6,
+      veda = $7, shakha = $8, native_place = $9,
+      community_custom_name = NULL, community_custom_pending = FALSE,
       registration_step = GREATEST(registration_step, 2),
       updated_at = CURRENT_TIMESTAMP
-    WHERE user_id = $9
-  `, [sub_sect, gotra, pravaraNorm, maternal_gotra, maternal_inti_peru, veda, shakha, native_place, userId]);
+    WHERE user_id = $10
+  `, [primary_sect || null, sub_sect, gotra, pravaraNorm, maternal_gotra, maternal_inti_peru, veda, shakha, native_place, userId]);
 
   return getProfileByUserId(userId);
 }
+
 
 // ─── Step 3: Birth Information ───────────────────────────────────────────────
 async function saveStep3(userId, data) {
@@ -427,6 +433,7 @@ async function updateFullProfile(userId, data) {
 
   // 2. Lineage
   if (
+    data.primary_sect !== undefined ||
     data.sub_sect !== undefined ||
     data.gotra !== undefined ||
     data.pravara !== undefined ||
@@ -438,17 +445,19 @@ async function updateFullProfile(userId, data) {
   ) {
     await db.query(`
       UPDATE profiles SET
-        sub_sect = COALESCE($1, sub_sect),
-        gotra = COALESCE($2, gotra),
-        pravara = COALESCE($3, pravara),
-        maternal_gotra = COALESCE($4, maternal_gotra),
-        maternal_inti_peru = COALESCE($5, maternal_inti_peru),
-        veda = COALESCE($6, veda),
-        shakha = COALESCE($7, shakha),
-        native_place = COALESCE($8, native_place),
+        primary_sect = COALESCE($1, primary_sect),
+        sub_sect = COALESCE($2, sub_sect),
+        gotra = COALESCE($3, gotra),
+        pravara = COALESCE($4, pravara),
+        maternal_gotra = COALESCE($5, maternal_gotra),
+        maternal_inti_peru = COALESCE($6, maternal_inti_peru),
+        veda = COALESCE($7, veda),
+        shakha = COALESCE($8, shakha),
+        native_place = COALESCE($9, native_place),
         updated_at = CURRENT_TIMESTAMP
-      WHERE user_id = $9
+      WHERE user_id = $10
     `, [
+      data.primary_sect !== undefined ? data.primary_sect : null,
       data.sub_sect !== undefined ? data.sub_sect : null,
       data.gotra !== undefined ? data.gotra : null,
       data.pravara !== undefined ? (data.pravara?.trim() || null) : null,
@@ -620,6 +629,7 @@ async function updateFullProfile(userId, data) {
 
   // 6. Preferences
   if (
+    data.pref_primary_sect !== undefined ||
     data.pref_sub_sect !== undefined ||
     data.pref_location !== undefined ||
     data.pref_age_diff_min !== undefined ||
@@ -627,13 +637,15 @@ async function updateFullProfile(userId, data) {
   ) {
     await db.query(`
       UPDATE profiles SET
-        pref_sub_sect = COALESCE($1, pref_sub_sect),
-        pref_location = COALESCE($2, pref_location),
-        pref_age_diff_min = CASE WHEN $3::INTEGER IS NOT NULL THEN $3::INTEGER ELSE pref_age_diff_min END,
-        pref_age_diff_max = CASE WHEN $4::INTEGER IS NOT NULL THEN $4::INTEGER ELSE pref_age_diff_max END,
+        pref_primary_sect = COALESCE($1, pref_primary_sect),
+        pref_sub_sect = COALESCE($2, pref_sub_sect),
+        pref_location = COALESCE($3, pref_location),
+        pref_age_diff_min = CASE WHEN $4::INTEGER IS NOT NULL THEN $4::INTEGER ELSE pref_age_diff_min END,
+        pref_age_diff_max = CASE WHEN $5::INTEGER IS NOT NULL THEN $5::INTEGER ELSE pref_age_diff_max END,
         updated_at = CURRENT_TIMESTAMP
-      WHERE user_id = $5
+      WHERE user_id = $6
     `, [
+      data.pref_primary_sect !== undefined ? data.pref_primary_sect : null,
       data.pref_sub_sect !== undefined ? data.pref_sub_sect : null,
       data.pref_location !== undefined ? data.pref_location : null,
       data.pref_age_diff_min !== undefined ? (data.pref_age_diff_min != null && data.pref_age_diff_min !== '' ? parseInt(data.pref_age_diff_min, 10) : null) : null,

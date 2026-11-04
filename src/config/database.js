@@ -1,7 +1,44 @@
-'use strict';
-
+const dns = require('dns');
 const { Pool } = require('pg');
 const env = require('./env');
+
+// ─── DNS Fallback for ISP/local router resolution issues ───────────────────────
+// In environments where the local router/ISP DNS (e.g. 192.168.29.1) fails or refuses
+// queries for cloud database domains (*.neon.tech), fallback to public DNS resolvers (8.8.8.8, 1.1.1.1).
+let dnsFallbackInitialized = false;
+function initDnsFallback() {
+  if (dnsFallbackInitialized) return;
+  dnsFallbackInitialized = true;
+
+  const resolver = new dns.Resolver();
+  try {
+    resolver.setServers(['8.8.8.8', '1.1.1.1']);
+  } catch (_) {}
+
+  const origLookup = dns.lookup;
+  dns.lookup = function (hostname, options, callback) {
+    if (typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+
+    origLookup(hostname, options, (err, address, family) => {
+      if (!err) {
+        return callback(null, address, family);
+      }
+      resolver.resolve4(hostname, (resErr, addresses) => {
+        if (resErr || !addresses || addresses.length === 0) {
+          return callback(err);
+        }
+        if (options && options.all) {
+          return callback(null, addresses.map((a) => ({ address: a, family: 4 })));
+        }
+        return callback(null, addresses[0], 4);
+      });
+    });
+  };
+}
+initDnsFallback();
 
 let pool = null;
 
@@ -20,7 +57,8 @@ function sanitizeDbUrl(url) {
 
 function getPool() {
   if (!pool) {
-    const connectionString = process.env.DATABASE_URL || env.DATABASE_URL;
+    const rawUrl = process.env.DATABASE_URL || env.DATABASE_URL;
+    const connectionString = rawUrl ? rawUrl.trim() : '';
 
     if (!connectionString) {
       throw new Error(
