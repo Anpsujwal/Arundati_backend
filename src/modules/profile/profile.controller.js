@@ -49,6 +49,10 @@ async function step5(req, res, next) {
 
 async function step6(req, res, next) {
   try {
+    if (req.body && (req.body.pref_sub_sect !== undefined || req.body.pref_location !== undefined || req.body.pref_age_diff_min !== undefined)) {
+      const profile = await profileService.saveStep7(req.user.user_id, req.body);
+      return success(res, { profile }, 'Preferences saved.');
+    }
     const profile = await profileService.finalizeRegistration(req.user.user_id);
     return success(res, { profile }, 'Profile submitted successfully. Pending ID verification.');
   } catch (err) { next(err); }

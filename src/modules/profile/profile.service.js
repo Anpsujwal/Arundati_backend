@@ -258,17 +258,13 @@ async function validateProfileSteps(userId) {
   if (!family || !family.father_name || !family.father_name.trim()) step5Missing.push("Father's name");
   if (!family || !family.mother_name || !family.mother_name.trim()) step5Missing.push("Mother's name");
 
-  const step6Missing = [];
-  if (!photos || photos.length === 0) step6Missing.push('At least 1 profile photo');
-
   const steps = {
     step1: { stepNum: 1, complete: step1Missing.length === 0, missing: step1Missing, label: 'Basic Information' },
     step2: { stepNum: 2, complete: step2Missing.length === 0, missing: step2Missing, label: 'Lineage & Gotra' },
     step3: { stepNum: 3, complete: step3Missing.length === 0, missing: step3Missing, label: 'Birth Details' },
     step4: { stepNum: 4, complete: step4Missing.length === 0, missing: step4Missing, label: 'Education & Profession' },
     step5: { stepNum: 5, complete: step5Missing.length === 0, missing: step5Missing, label: 'Family Information' },
-    step6: { stepNum: 6, complete: step6Missing.length === 0, missing: step6Missing, label: 'Profile Photos' },
-    step7: { stepNum: 7, complete: true, missing: [], label: 'Partner Preferences' },
+    step6: { stepNum: 6, complete: true, missing: [], label: 'Partner Preferences' },
   };
 
   const isComplete = Object.values(steps).every((s) => s.complete);
@@ -279,7 +275,7 @@ async function validateProfileSteps(userId) {
   };
 }
 
-// ─── Step 7: Preferences & Final Submission ──────────────────────────────────
+// ─── Step 6/7: Preferences & Final Submission ──────────────────────────────────
 async function saveStep7(userId, data) {
   const validation = await validateProfileSteps(userId);
   if (!validation.isComplete) {
@@ -287,7 +283,7 @@ async function saveStep7(userId, data) {
       .filter((s) => !s.complete)
       .map((s) => `${s.label}: missing ${s.missing.join(', ')}`)
       .join('; ');
-    const error = new Error(`Cannot submit application. All 7 steps and mandatory fields must be completed. Incomplete: ${incompleteDetails}`);
+    const error = new Error(`Cannot submit application. All 6 steps and mandatory fields must be completed. Incomplete: ${incompleteDetails}`);
     error.status = 400;
     throw error;
   }
@@ -298,7 +294,7 @@ async function saveStep7(userId, data) {
     UPDATE profiles SET
       pref_sub_sect = $1, pref_location = $2,
       pref_age_diff_min = $3, pref_age_diff_max = $4,
-      registration_step = 7,
+      registration_step = GREATEST(registration_step, 6),
       updated_at = CURRENT_TIMESTAMP
     WHERE user_id = $5
   `, [

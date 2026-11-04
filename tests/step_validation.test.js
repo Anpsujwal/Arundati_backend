@@ -5,12 +5,12 @@ const assert = require('node:assert/strict');
 const profileService = require('../src/modules/profile/profile.service');
 const db = require('../src/config/database');
 
-test('Step validation blocks saveStep7 when mandatory fields across 7 steps are missing', async () => {
+test('Step validation blocks saveStep7 when mandatory fields across 6 steps are missing', async () => {
   const originalQueryOne = db.queryOne;
   const originalQueryRows = db.queryRows;
 
   try {
-    // Mock incomplete profile (missing gotra, sub-sect, photo, etc.)
+    // Mock incomplete profile (missing gotra, sub-sect, etc.)
     db.queryOne = async (sql, params) => {
       if (sql.includes('FROM profiles')) {
         return {
@@ -40,7 +40,6 @@ test('Step validation blocks saveStep7 when mandatory fields across 7 steps are 
       return null;
     };
     db.queryRows = async (sql) => {
-      if (sql.includes('FROM profile_photos')) return []; // missing photo
       return [];
     };
 
@@ -48,8 +47,6 @@ test('Step validation blocks saveStep7 when mandatory fields across 7 steps are 
     assert.equal(validation.isComplete, false);
     assert.equal(validation.steps.step2.complete, false);
     assert.deepEqual(validation.steps.step2.missing, ['Sub-sect', 'Gotra']);
-    assert.equal(validation.steps.step6.complete, false);
-    assert.deepEqual(validation.steps.step6.missing, ['At least 1 profile photo']);
 
     // Attempting to call saveStep7 should throw an error
     await assert.rejects(
@@ -58,7 +55,7 @@ test('Step validation blocks saveStep7 when mandatory fields across 7 steps are 
       },
       (err) => {
         assert.equal(err.status, 400);
-        assert.ok(err.message.includes('All 7 steps and mandatory fields must be completed'));
+        assert.ok(err.message.includes('All 6 steps and mandatory fields must be completed'));
         return true;
       }
     );
